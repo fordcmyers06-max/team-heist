@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Team Heist</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- HOME -->
+  <section class="view active" id="view-home">
+    <div class="card center">
+      <h1>Team Heist</h1>
+      <p class="subtitle">Split into teams. Race the clock. Don't peek at your teammates' screens.</p>
+      <div class="stack">
+        <button class="btn primary" id="btn-go-host">Host a Game</button>
+        <button class="btn" id="btn-go-join">Join a Game</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOST: CREATE -->
+  <section class="view" id="view-host-create">
+    <div class="card center">
+      <h2>Host a Game</h2>
+      <label class="field">
+        <span>Timer length (minutes)</span>
+        <input type="number" id="input-timer" value="15" min="1" max="180" />
+      </label>
+      <div class="stack">
+        <button class="btn primary" id="btn-create-lobby">Create Lobby</button>
+        <button class="btn ghost" data-back>Back</button>
+      </div>
+      <p class="error" id="host-create-error"></p>
+    </div>
+  </section>
+
+  <!-- JOIN -->
+  <section class="view" id="view-join">
+    <div class="card center">
+      <h2>Join a Game</h2>
+      <label class="field">
+        <span>Lobby Code</span>
+        <input type="text" id="input-code" maxlength="5" placeholder="ABCDE" style="text-transform:uppercase" />
+      </label>
+      <label class="field">
+        <span>Your Name</span>
+        <input type="text" id="input-name" maxlength="20" placeholder="Nickname" />
+      </label>
+      <div class="stack">
+        <button class="btn primary" id="btn-join-lobby">Join</button>
+        <button class="btn ghost" data-back>Back</button>
+      </div>
+      <p class="error" id="join-error"></p>
+    </div>
+  </section>
+
+  <!-- LOBBY (shared by host + players) -->
+  <section class="view" id="view-lobby">
+    <div class="card">
+      <div class="lobby-head">
+        <div>
+          <h2>Lobby</h2>
+          <p class="subtitle" id="lobby-role-note"></p>
+        </div>
+        <div class="code-badge">
+          <span class="code-label">CODE</span>
+          <span class="code-value" id="lobby-code">-----</span>
+        </div>
+      </div>
+      <p>Timer: <strong id="lobby-timer">-</strong> minutes</p>
+      <h3>Players (<span id="lobby-count">0</span>)</h3>
+      <ul class="player-list" id="lobby-players"></ul>
+      <div class="stack" id="host-lobby-controls" style="display:none">
+        <button class="btn primary" id="btn-start-game">Start Game</button>
+        <p class="hint">Teams of 5 will be assigned automatically. Need at least 2 players.</p>
+      </div>
+      <p class="hint" id="player-lobby-note">Waiting for the host to start the game…</p>
+      <p class="error" id="lobby-error"></p>
+    </div>
+  </section>
+
+  <!-- HOST DASHBOARD (spectator overview during active game) -->
+  <section class="view" id="view-host-dashboard">
+    <div class="card wide">
+      <div class="dash-head">
+        <h2>Team Heist — Live</h2>
+        <div class="timer-display" id="host-timer">--:--</div>
+        <button class="btn danger small" id="btn-end-game">End Game</button>
+      </div>
+      <div class="teams-grid" id="host-teams-grid"></div>
+    </div>
+  </section>
+
+  <!-- PLAYER GAME SCREEN -->
+  <section class="view" id="view-player-game">
+    <div class="card wide">
+      <div class="dash-head">
+        <div>
+          <h2 id="player-team-name">Team</h2>
+          <p class="subtitle">Do not show your screen to teammates. Talk it out, then claim a task.</p>
+        </div>
+        <div class="timer-display" id="player-timer">--:--</div>
+      </div>
+
+      <div class="game-columns">
+        <div class="col">
+          <h3>Task Board — Score: <span id="player-team-score">0</span></h3>
+          <ul class="task-list" id="task-list"></ul>
+        </div>
+        <div class="col chat-col">
+          <h3>Team Chat</h3>
+          <ul class="chat-log" id="chat-log"></ul>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Message your team…" maxlength="300" />
+            <button class="btn primary small" id="btn-chat-send">Send</button>
+          </div>
+          <h3>Teammates</h3>
+          <ul class="player-list" id="player-teammates"></ul>
+        </div>
+      </div>
+      <p class="error" id="game-error"></p>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="view" id="view-results">
+    <div class="card wide">
+      <h2>Game Over</h2>
+      <div class="teams-grid" id="results-grid"></div>
+      <div class="stack">
+        <button class="btn primary" data-home>Back to Home</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

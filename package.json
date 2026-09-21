@@ -1,0 +1,13 @@
+{
+  "name": "team-heist",
+  "version": "1.0.0",
+  "description": "Team-based party game with a host, lobby codes, teams of five, and a shared task board.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}
