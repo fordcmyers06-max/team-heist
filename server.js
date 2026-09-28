@@ -10,17 +10,9 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, "public")));
 
-// ---- In-memory game state -------------------------------------------------
-// games: Map<code, Game>
-// Game = {
-//   code, hostSocketId, timerMinutes, status: 'lobby'|'active'|'ended',
-//   players: Map<socketId, { id, name, teamIndex, currentTaskId }>,
-//   teams: [{ name, memberIds: [socketId], score, tasks: [Task] }],
-//   endTime: number|null,
-// }
 const games = new Map();
 
-const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no ambiguous chars
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 function generateCode() {
   let code;
   do {
@@ -62,28 +54,45 @@ function broadcastTeams(code) {
   io.to(code).emit("teams:update", { teams: publicTeams(game) });
 }
 
-function assignTeams(game) {
-  const playerIds = shuffle(Array.from(game.players.keys()));
-  const TEAM_SIZE = 5;
-  const numTeams = Math.max(1, Math.ceil(playerIds.length / TEAM_SIZE));
+const TEAM_SIZE = 5;
 
-  const teams = Array.from({ length: numTeams }, (_, i) => ({
-    name: `Team ${i + 1}`,
-    memberIds: [],
-    score: 0,
-    tasks: generateTaskBoard(12),
-  }));
+function ensureTeamSlots(game) {
+  if (!game.teams) game.teams = [];
+  const desired = Math.max(1, Math.ceil(game.players.size / TEAM_SIZE));
 
-  // Round-robin so team sizes differ by at most 1.
-  playerIds.forEach((id, i) => {
-    const teamIndex = i % numTeams;
-    teams[teamIndex].memberIds.push(id);
-    const player = game.players.get(id);
-    player.teamIndex = teamIndex;
+  while (game.teams.length < desired) {
+    game.teams.push({ name: `Team ${game.teams.length + 1}`, memberIds: [], score: 0, tasks: [] });
+  }
+  while (game.teams.length > desired && game.teams[game.teams.length - 1].memberIds.length === 0) {
+    game.teams.pop();
+  }
+}
+
+function ensureAllPlayersAssigned(game) {
+  ensureTeamSlots(game);
+  for (const [id, player] of game.players) {
+    if (player.teamIndex !== null && game.teams[player.teamIndex]) continue;
+    let target = 0;
+    for (let i = 1; i < game.teams.length; i++) {
+      if (game.teams[i].memberIds.length < game.teams[target].memberIds.length) target = i;
+    }
+    game.teams[target].memberIds.push(id);
+    player.teamIndex = target;
     player.currentTaskId = null;
-  });
+  }
+}
 
-  game.teams = teams;
+function broadcastTeamsPreview(code) {
+  const game = games.get(code);
+  if (!game || !game.teams) return;
+  io.to(code).emit("teams:preview", {
+    teams: game.teams.map((team, i) => ({
+      index: i,
+      name: team.name,
+      capacity: TEAM_SIZE,
+      members: team.memberIds.map((id) => ({ id, name: game.players.get(id)?.name || "(left)" })),
+    })),
+  });
 }
 
 function shuffle(arr) {
@@ -104,7 +113,6 @@ function endGame(code) {
 }
 
 io.on("connection", (socket) => {
-  // --- Host creates a lobby ---
   socket.on("host:createLobby", ({ timerMinutes }, cb) => {
     const minutes = Math.min(180, Math.max(1, Number(timerMinutes) || 15));
     const code = generateCode();
@@ -125,7 +133,6 @@ io.on("connection", (socket) => {
     cb && cb({ ok: true, code, timerMinutes: minutes });
   });
 
-  // --- Player joins a lobby ---
   socket.on("player:joinLobby", ({ code, name }, cb) => {
     code = String(code || "").toUpperCase().trim();
     const game = games.get(code);
@@ -145,11 +152,37 @@ io.on("connection", (socket) => {
     socket.data.role = "player";
     socket.data.code = code;
 
+    ensureTeamSlots(game);
     cb && cb({ ok: true, code, name: finalName, timerMinutes: game.timerMinutes });
     broadcastLobby(code);
+    broadcastTeamsPreview(code);
   });
 
-  // --- Host starts the game ---
+  socket.on("player:chooseTeam", ({ teamIndex }, cb) => {
+    const code = socket.data.code;
+    const game = games.get(code);
+    if (!game) return cb && cb({ ok: false, error: "Not in a game." });
+    if (game.status !== "lobby") return cb && cb({ ok: false, error: "Game already started." });
+    const player = game.players.get(socket.id);
+    if (!player) return cb && cb({ ok: false, error: "Not in this game." });
+
+    ensureTeamSlots(game);
+    const team = game.teams[teamIndex];
+    if (!team) return cb && cb({ ok: false, error: "That team doesn't exist." });
+    if (player.teamIndex === teamIndex) return cb && cb({ ok: true });
+    if (team.memberIds.length >= TEAM_SIZE) return cb && cb({ ok: false, error: "That team is full." });
+
+    if (player.teamIndex !== null && game.teams[player.teamIndex]) {
+      game.teams[player.teamIndex].memberIds = game.teams[player.teamIndex].memberIds.filter((id) => id !== socket.id);
+    }
+    team.memberIds.push(socket.id);
+    player.teamIndex = teamIndex;
+
+    ensureTeamSlots(game);
+    broadcastTeamsPreview(code);
+    cb && cb({ ok: true });
+  });
+
   socket.on("host:startGame", (_, cb) => {
     const code = socket.data.code;
     const game = games.get(code);
@@ -157,7 +190,8 @@ io.on("connection", (socket) => {
     if (game.players.size < 2) return cb && cb({ ok: false, error: "Need at least 2 players." });
     if (game.status !== "lobby") return cb && cb({ ok: false, error: "Game already started." });
 
-    assignTeams(game);
+    ensureAllPlayersAssigned(game);
+    game.teams.forEach((team) => { team.tasks = generateTaskBoard(12); });
     game.status = "active";
     game.endTime = Date.now() + game.timerMinutes * 60 * 1000;
 
@@ -171,7 +205,6 @@ io.on("connection", (socket) => {
     cb && cb({ ok: true });
   });
 
-  // --- Player claims a task ---
   socket.on("player:claimTask", ({ taskId }, cb) => {
     const code = socket.data.code;
     const game = games.get(code);
@@ -193,7 +226,6 @@ io.on("connection", (socket) => {
     cb && cb({ ok: true });
   });
 
-  // --- Player completes their claimed task ---
   socket.on("player:completeTask", ({ taskId }, cb) => {
     const code = socket.data.code;
     const game = games.get(code);
@@ -214,7 +246,6 @@ io.on("connection", (socket) => {
     cb && cb({ ok: true });
   });
 
-  // --- Team chat ---
   socket.on("chat:send", ({ message }) => {
     const code = socket.data.code;
     const game = games.get(code);
@@ -227,7 +258,6 @@ io.on("connection", (socket) => {
     io.to(room).emit("chat:message", { from: player.name, text, at: Date.now() });
   });
 
-  // Join/leave team-specific chat room when teams are assigned.
   socket.on("player:joinTeamRoom", () => {
     const code = socket.data.code;
     const game = games.get(code);
@@ -237,7 +267,6 @@ io.on("connection", (socket) => {
     socket.join(`${code}-team-${player.teamIndex}`);
   });
 
-  // --- Host ends game early ---
   socket.on("host:endGame", () => {
     const code = socket.data.code;
     const game = games.get(code);
@@ -262,7 +291,6 @@ io.on("connection", (socket) => {
       game.players.delete(socket.id);
       if (player.teamIndex !== null && game.teams[player.teamIndex]) {
         game.teams[player.teamIndex].memberIds = game.teams[player.teamIndex].memberIds.filter((id) => id !== socket.id);
-        // Free up any task they had claimed but not finished.
         const team = game.teams[player.teamIndex];
         team.tasks.forEach((t) => {
           if (t.claimedBy?.playerId === socket.id && t.status === "in-progress") {
@@ -270,7 +298,12 @@ io.on("connection", (socket) => {
             t.claimedBy = null;
           }
         });
-        broadcastTeams(code);
+        if (game.status === "lobby") {
+          ensureTeamSlots(game);
+          broadcastTeamsPreview(code);
+        } else {
+          broadcastTeams(code);
+        }
       }
       if (game.status === "lobby") broadcastLobby(code);
     }
