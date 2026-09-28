@@ -1,7 +1,7 @@
 const socket = io();
 
 const state = {
-  role: null, // 'host' | 'player'
+  role: null,
   code: null,
   name: null,
   myId: null,
@@ -10,7 +10,6 @@ const state = {
   endTime: null,
 };
 
-// ---------- view switching ----------
 function showView(id) {
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.getElementById(id).classList.add("active");
@@ -21,7 +20,6 @@ document.getElementById("btn-go-join").onclick = () => showView("view-join");
 document.querySelectorAll("[data-back]").forEach((b) => (b.onclick = () => showView("view-home")));
 document.querySelectorAll("[data-home]").forEach((b) => (b.onclick = () => window.location.reload()));
 
-// ---------- host: create lobby ----------
 document.getElementById("btn-create-lobby").onclick = () => {
   const timerMinutes = document.getElementById("input-timer").value;
   socket.emit("host:createLobby", { timerMinutes }, (res) => {
@@ -35,7 +33,6 @@ document.getElementById("btn-create-lobby").onclick = () => {
   });
 };
 
-// ---------- player: join lobby ----------
 document.getElementById("btn-join-lobby").onclick = () => {
   const code = document.getElementById("input-code").value;
   const name = document.getElementById("input-name").value;
@@ -58,6 +55,7 @@ function enterLobby() {
   document.getElementById("player-lobby-note").style.display = state.role === "host" ? "none" : "block";
   document.getElementById("lobby-role-note").textContent =
     state.role === "host" ? "Share this code with your players." : `Joined as ${state.name}`;
+  document.getElementById("player-choose-hint").style.display = state.role === "host" ? "none" : "block";
   showView("view-lobby");
 }
 
@@ -66,6 +64,43 @@ document.getElementById("btn-start-game").onclick = () => {
     if (!res.ok) document.getElementById("lobby-error").textContent = res.error;
   });
 };
+
+socket.on("teams:preview", ({ teams }) => {
+  const grid = document.getElementById("teams-preview-grid");
+  grid.innerHTML = "";
+  teams.forEach((team) => {
+    const isMine = team.members.some((m) => m.id === socket.id);
+    const isFull = team.members.length >= team.capacity;
+
+    const panel = document.createElement("div");
+    panel.className = "team-panel";
+    if (isMine) panel.style.borderColor = "var(--accent-2)";
+
+    const membersHtml = team.members
+      .map((m) => (m.id === socket.id ? `${m.name} (you)` : m.name))
+      .join(", ") || "no players yet";
+
+    panel.innerHTML =
+      `<h4>${team.name} <span class="score">${team.members.length}/${team.capacity}</span></h4>` +
+      `<div class="members">${membersHtml}</div>`;
+
+    if (state.role === "player") {
+      const btn = document.createElement("button");
+      btn.className = "btn small" + (isMine ? "" : " primary");
+      btn.textContent = isMine ? "Your Team" : isFull ? "Full" : "Join This Team";
+      btn.disabled = isMine || isFull;
+      btn.onclick = () => {
+        socket.emit("player:chooseTeam", { teamIndex: team.index }, (res) => {
+          if (!res.ok) document.getElementById("lobby-error").textContent = res.error;
+          else document.getElementById("lobby-error").textContent = "";
+        });
+      };
+      panel.appendChild(btn);
+    }
+
+    grid.appendChild(panel);
+  });
+});
 
 socket.on("lobby:update", ({ players, timerMinutes }) => {
   state.timerMinutes = timerMinutes;
@@ -84,7 +119,6 @@ socket.on("lobby:closed", ({ reason }) => {
   window.location.reload();
 });
 
-// ---------- game start ----------
 socket.on("game:started", ({ teams, endTime, yourAssignments }) => {
   state.endTime = endTime;
   socket.emit("player:joinTeamRoom");
@@ -117,7 +151,6 @@ document.getElementById("btn-end-game").onclick = () => {
   if (confirm("End the game now for everyone?")) socket.emit("host:endGame");
 };
 
-// ---------- timer ----------
 let timerInterval = null;
 function startTimerLoop(elId) {
   stopTimerLoop();
@@ -139,7 +172,6 @@ function stopTimerLoop() {
   timerInterval = null;
 }
 
-// ---------- host dashboard rendering ----------
 function renderHostDashboard(teams) {
   const grid = document.getElementById("host-teams-grid");
   grid.innerHTML = "";
@@ -161,7 +193,6 @@ function taskMiniHtml(t) {
   return `<div class="mini-task ${t.status}"><span>${escapeHtml(t.text)} <em style="color:var(--muted)">(${label})</em></span><span class="pts">${t.points}</span></div>`;
 }
 
-// ---------- results ----------
 function renderResults(teams) {
   const grid = document.getElementById("results-grid");
   const sorted = [...teams].sort((a, b) => b.score - a.score);
@@ -175,7 +206,6 @@ function renderResults(teams) {
   });
 }
 
-// ---------- player game rendering ----------
 let lastTeamsSnapshot = null;
 function renderPlayerGame(teams) {
   lastTeamsSnapshot = teams;
@@ -235,7 +265,6 @@ function renderPlayerGame(teams) {
   });
 }
 
-// ---------- chat ----------
 document.getElementById("btn-chat-send").onclick = sendChat;
 document.getElementById("chat-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendChat();
