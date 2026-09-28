@@ -119,6 +119,7 @@ h3 { color: var(--muted); font-size: 0.95rem; text-transform: uppercase; letter-
 .team-panel h4 { margin: 0 0 4px; display: flex; justify-content: space-between; }
 .team-panel .score { color: var(--gold); font-weight: 700; }
 .team-panel .members { color: var(--muted); font-size: 0.85rem; margin-bottom: 10px; }
+.team-panel .btn { display: block; width: 100%; margin-top: 4px; }
 
 .mini-task { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px dashed var(--border); font-size: 0.85rem; }
 .mini-task:first-of-type { border-top: none; }
